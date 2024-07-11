@@ -3,6 +3,6 @@ defmodule DesafioCliTest do
   doctest DesafioCli
 
   test "greets the world" do
-    assert DesafioCli.hello() == :world
+    assert DesafioCli.phrase() == "Hello, world!"
   end
 end
