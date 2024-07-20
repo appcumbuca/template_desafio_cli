@@ -3,7 +3,7 @@ defmodule DesafioCli.MixProject do
 
   def project do
     [
-      app: :desafio_cli,      
+      app: :desafio_cli,
       version: "0.1.0",
       elixir: "~> 1.16",
       escript: [main_module: DesafioCli],
