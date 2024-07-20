@@ -14,13 +14,13 @@ defmodule DesafioCli do
     |> Enum.each(&IO.puts/1)
   end
 
-  defp read_names() do
+  def read_names() do
     Stream.repeatedly(fn -> IO.gets("Digite um nome de um Rei ou Rainha (ou pressione Enter para terminar): ") end)
     |> Enum.take_while(&(&1 != "\n"))  # Lê nomes até uma linha em branco
     |> Enum.map(&String.trim/1)        # Remove espaços em branco
   end
 
-  defp count_names(names) do
+  def count_names(names) do
     names
     |> Enum.frequencies()  # Cria um mapa com a contagem de ocorrências dos nomes
     |> Enum.flat_map(fn {name, count} ->
@@ -30,7 +30,7 @@ defmodule DesafioCli do
     end)
   end
 
-  defp integer_to_roman(number) do
+  def integer_to_roman(number) do
     roman_numerals = [
       {1000, "M"},
       {900, "CM"},
@@ -55,7 +55,7 @@ defmodule DesafioCli do
     |> elem(1)
   end
 
-  defp div_rem(a, b) do
+  def div_rem(a, b) do
     {div(a, b), rem(a, b)}
   end
 end
