@@ -3,39 +3,21 @@ defmodule DesafioCli do
   Ponto de entrada para a CLI.
   """
 
-  def start_link(_) do
-    Agent.start_link(fn -> %{} end, name: :database)
-  end
-
   @doc """
   A função main recebe os argumentos passados na linha de
   comando como lista de strings e executa a CLI.
   """
   def main(_args) do
-    start_link([])
+    Agent.start_link(fn -> %{database: %{}, transactions: []} end, name: __MODULE__)
     loop()
   end
 
-  def split_with_quotes(string) do
-    # Regex para dividir a string em palavras, considerando aspas simples e duplas e escapando as aspas
-    regex = ~r/'[^'\\]*(?:\\.[^'\\]*)*'|"[^"\\]*(?:\\.[^"\\]*)*"|\S+/
-
-    Regex.scan(regex, string)
-    |> List.flatten()
-    |> Enum.map(&unescape_quotes/1)
-  end
-
-  defp unescape_quotes(str) do
-    str
-    |> String.replace(~r/^['"]|['"]$/, "")
-    |> String.replace("\\'", "'")
-    |> String.replace("\\\"", "\"")
-  end
-
   defp loop do
+    IO.write("> ")
+
     IO.read(:line)
     |> String.trim()
-    |> split_with_quotes()
+    |> StringUtils.split_with_quotes()
     |> handle_command()
 
     loop()
@@ -46,18 +28,83 @@ defmodule DesafioCli do
     # IO.puts("COMMAND: #{command} ARGS: #{inspect(args)}")
 
     case {command, args} do
-      {"BEGIN", []} -> IO.puts("ERR \"BEGIN - Not implemented\"")
-      {"ROLLBACK", []} -> IO.puts("ERR \"ROLLBACK - Not implemented\"")
-      {"COMMIT", []} -> IO.puts("ERR \"COMMIT - Not implemented\"")
+      {"BEGIN", []} -> begin()
+      {"ROLLBACK", []} -> rollback()
+      {"COMMIT", []} -> commit()
+      {"GET", [key]} -> get(key)
+      {"SET", [key, value]} -> set(key, value)
       {"BEGIN", _} -> IO.puts("ERR \"BEGIN - Syntax error\"")
       {"ROLLBACK", _} -> IO.puts("ERR \"ROLLBACK - Syntax error\"")
       {"COMMIT", _} -> IO.puts("ERR \"COMMIT - Syntax error\"")
-      {"GET", [key]} -> get(key)
-      {"SET", [key, value]} -> set(key, value)
       {"SET", _} -> IO.puts("ERR \"SET <chave> <valor> - Syntax error\"")
       {"GET", _} -> IO.puts("ERR \"GET <chave> - Syntax error\"")
       {_, _} -> IO.puts("ERR \"No command #{command}\"")
     end
+  end
+
+  def begin do
+    Agent.update(__MODULE__, fn db -> Map.put(db, :transactions, db.transactions ++ [%{}]) end)
+    num_of_transactions = Agent.get(__MODULE__, fn db -> db.transactions |> length() end)
+    IO.puts(num_of_transactions)
+
+    IO.puts("DATABASE: ")
+    IO.inspect(Agent.get(__MODULE__, fn db -> db.database end))
+    IO.puts("TRANSACTIONS: ")
+    IO.inspect(Agent.get(__MODULE__, fn db -> db.transactions end))
+  end
+
+  def commit do
+    num_of_transactions = Agent.get(__MODULE__, fn db -> db.transactions |> length() end)
+
+    case num_of_transactions do
+      0 ->
+        IO.puts("ERR \"No transaction in progress\"")
+
+      1 ->
+        Agent.update(__MODULE__, fn db ->
+          %{
+            transactions: [],
+            database: Map.merge(db.database, List.first(db.transactions))
+          }
+        end)
+
+      _ ->
+        Agent.update(__MODULE__, fn db ->
+          last_transaction = List.last(db.transactions)
+          remaining_transactions = List.delete_at(db.transactions, -1)
+
+          Map.put(
+            db,
+            :transactions,
+            List.delete_at(remaining_transactions, -1) ++
+              [Map.merge(List.last(remaining_transactions), last_transaction)]
+          )
+        end)
+    end
+
+    IO.puts("DATABASE: ")
+    IO.inspect(Agent.get(__MODULE__, fn db -> db.database end))
+    IO.puts("TRANSACTIONS: ")
+    IO.inspect(Agent.get(__MODULE__, fn db -> db.transactions end))
+  end
+
+  def rollback do
+    num_of_transactions = Agent.get(__MODULE__, fn db -> db.transactions |> length() end)
+
+    case num_of_transactions do
+      0 ->
+        IO.puts("ERR \"No transaction in progress\"")
+
+      _ ->
+        Agent.update(__MODULE__, fn db ->
+          Map.put(db, :transactions, List.delete_at(db.transactions, -1))
+        end)
+    end
+
+    IO.puts("DATABASE: ")
+    IO.inspect(Agent.get(__MODULE__, fn db -> db.database end))
+    IO.puts("TRANSACTIONS: ")
+    IO.inspect(Agent.get(__MODULE__, fn db -> db.transactions end))
   end
 
   defp parse_value(arg) do
@@ -78,14 +125,49 @@ defmodule DesafioCli do
 
   def set(key, value) do
     parsed_value = parse_value(value)
-    exists = Agent.get(:database, fn db -> Map.get(db, key) end)
-    Agent.update(:database, fn db -> Map.put(db, key, parsed_value) end)
+    exists = Map.get(get_db_with_transactions(), key)
+
+    Agent.update(__MODULE__, fn db ->
+      if Enum.empty?(db.transactions) do
+        Map.put(db, :database, Map.put(db.database, key, parsed_value))
+      else
+        last_transaction = List.last(db.transactions)
+
+        Map.put(
+          db,
+          :transactions,
+          List.delete_at(db.transactions, -1) ++ [Map.put(last_transaction, key, parsed_value)]
+        )
+      end
+    end)
 
     IO.puts(if exists == nil, do: "FALSE #{parsed_value}", else: "TRUE #{parsed_value}")
+
+    IO.puts("DATABASE: ")
+    IO.inspect(Agent.get(__MODULE__, fn db -> db.database end))
+    IO.puts("TRANSACTIONS: ")
+    IO.inspect(Agent.get(__MODULE__, fn db -> db.transactions end))
   end
 
   def get(key) do
-    value = Agent.get(:database, fn db -> Map.get(db, key, "NIL") end)
+    value = Map.get(get_db_with_transactions(), key, "NIL")
     IO.puts(value)
+
+    IO.puts("DATABASE WITH TRANSACTIONS: ")
+    IO.inspect(get_db_with_transactions())
+  end
+
+  def get_db_with_transactions do
+    Agent.get(__MODULE__, fn db ->
+      transactions_merged =
+        db.transactions
+        |> Enum.reduce(%{}, fn map, acc ->
+          Map.merge(acc, map)
+        end)
+
+      final_merged_map = Map.merge(db.database, transactions_merged)
+
+      final_merged_map
+    end)
   end
 end
