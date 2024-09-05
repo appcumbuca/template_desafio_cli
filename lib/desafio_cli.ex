@@ -43,38 +43,41 @@ defmodule DesafioCli do
   end
 
   def begin do
-    Agent.update(__MODULE__, fn db -> Map.put(db, :transactions, db.transactions ++ [%{}]) end)
-    num_of_transactions = Agent.get(__MODULE__, fn db -> db.transactions |> length() end)
+    Agent.update(__MODULE__, fn state ->
+      Map.put(state, :transactions, state.transactions ++ [%{}])
+    end)
+
+    num_of_transactions = Agent.get(__MODULE__, fn state -> state.transactions |> length() end)
     IO.puts(num_of_transactions)
 
     IO.puts("DATABASE: ")
-    IO.inspect(Agent.get(__MODULE__, fn db -> db.database end))
+    IO.inspect(Agent.get(__MODULE__, fn state -> state.database end))
     IO.puts("TRANSACTIONS: ")
-    IO.inspect(Agent.get(__MODULE__, fn db -> db.transactions end))
+    IO.inspect(Agent.get(__MODULE__, fn state -> state.transactions end))
   end
 
   def commit do
-    num_of_transactions = Agent.get(__MODULE__, fn db -> db.transactions |> length() end)
+    num_of_transactions = Agent.get(__MODULE__, fn state -> state.transactions |> length() end)
 
     case num_of_transactions do
       0 ->
         IO.puts("ERR \"No transaction in progress\"")
 
       1 ->
-        Agent.update(__MODULE__, fn db ->
+        Agent.update(__MODULE__, fn state ->
           %{
             transactions: [],
-            database: Map.merge(db.database, List.first(db.transactions))
+            database: Map.merge(state.database, List.first(state.transactions))
           }
         end)
 
       _ ->
-        Agent.update(__MODULE__, fn db ->
-          last_transaction = List.last(db.transactions)
-          remaining_transactions = List.delete_at(db.transactions, -1)
+        Agent.update(__MODULE__, fn state ->
+          last_transaction = List.last(state.transactions)
+          remaining_transactions = List.delete_at(state.transactions, -1)
 
           Map.put(
-            db,
+            state,
             :transactions,
             List.delete_at(remaining_transactions, -1) ++
               [Map.merge(List.last(remaining_transactions), last_transaction)]
@@ -83,28 +86,28 @@ defmodule DesafioCli do
     end
 
     IO.puts("DATABASE: ")
-    IO.inspect(Agent.get(__MODULE__, fn db -> db.database end))
+    IO.inspect(Agent.get(__MODULE__, fn state -> state.database end))
     IO.puts("TRANSACTIONS: ")
-    IO.inspect(Agent.get(__MODULE__, fn db -> db.transactions end))
+    IO.inspect(Agent.get(__MODULE__, fn state -> state.transactions end))
   end
 
   def rollback do
-    num_of_transactions = Agent.get(__MODULE__, fn db -> db.transactions |> length() end)
+    num_of_transactions = Agent.get(__MODULE__, fn state -> state.transactions |> length() end)
 
     case num_of_transactions do
       0 ->
         IO.puts("ERR \"No transaction in progress\"")
 
       _ ->
-        Agent.update(__MODULE__, fn db ->
-          Map.put(db, :transactions, List.delete_at(db.transactions, -1))
+        Agent.update(__MODULE__, fn state ->
+          Map.put(state, :transactions, List.delete_at(state.transactions, -1))
         end)
     end
 
     IO.puts("DATABASE: ")
-    IO.inspect(Agent.get(__MODULE__, fn db -> db.database end))
+    IO.inspect(Agent.get(__MODULE__, fn state -> state.database end))
     IO.puts("TRANSACTIONS: ")
-    IO.inspect(Agent.get(__MODULE__, fn db -> db.transactions end))
+    IO.inspect(Agent.get(__MODULE__, fn state -> state.transactions end))
   end
 
   defp parse_value(arg) do
@@ -125,18 +128,18 @@ defmodule DesafioCli do
 
   def set(key, value) do
     parsed_value = parse_value(value)
-    exists = Map.get(get_db_with_transactions(), key)
+    exists = Map.get(get_database_with_transactions(), key)
 
-    Agent.update(__MODULE__, fn db ->
-      if Enum.empty?(db.transactions) do
-        Map.put(db, :database, Map.put(db.database, key, parsed_value))
+    Agent.update(__MODULE__, fn state ->
+      if Enum.empty?(state.transactions) do
+        Map.put(state, :database, Map.put(state.database, key, parsed_value))
       else
-        last_transaction = List.last(db.transactions)
+        last_transaction = List.last(state.transactions)
 
         Map.put(
-          db,
+          state,
           :transactions,
-          List.delete_at(db.transactions, -1) ++ [Map.put(last_transaction, key, parsed_value)]
+          List.delete_at(state.transactions, -1) ++ [Map.put(last_transaction, key, parsed_value)]
         )
       end
     end)
@@ -144,28 +147,28 @@ defmodule DesafioCli do
     IO.puts(if exists == nil, do: "FALSE #{parsed_value}", else: "TRUE #{parsed_value}")
 
     IO.puts("DATABASE: ")
-    IO.inspect(Agent.get(__MODULE__, fn db -> db.database end))
+    IO.inspect(Agent.get(__MODULE__, fn state -> state.database end))
     IO.puts("TRANSACTIONS: ")
-    IO.inspect(Agent.get(__MODULE__, fn db -> db.transactions end))
+    IO.inspect(Agent.get(__MODULE__, fn state -> state.transactions end))
   end
 
   def get(key) do
-    value = Map.get(get_db_with_transactions(), key, "NIL")
+    value = Map.get(get_database_with_transactions(), key, "NIL")
     IO.puts(value)
 
     IO.puts("DATABASE WITH TRANSACTIONS: ")
-    IO.inspect(get_db_with_transactions())
+    IO.inspect(get_database_with_transactions())
   end
 
-  def get_db_with_transactions do
-    Agent.get(__MODULE__, fn db ->
+  def get_database_with_transactions do
+    Agent.get(__MODULE__, fn state ->
       transactions_merged =
-        db.transactions
+        state.transactions
         |> Enum.reduce(%{}, fn map, acc ->
           Map.merge(acc, map)
         end)
 
-      final_merged_map = Map.merge(db.database, transactions_merged)
+      final_merged_map = Map.merge(state.database, transactions_merged)
 
       final_merged_map
     end)
